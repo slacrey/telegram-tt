@@ -2,6 +2,7 @@ import type { ApiMessage, ApiUpdateChat } from '../../../api/types';
 import type { ActionReturnType } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
+import { callApi } from '../../../api/gramjs';
 import { ARCHIVED_FOLDER_ID, MAX_ACTIVE_PINNED_CHATS } from '../../../config';
 import { buildCollectionByKey, omit } from '../../../util/iteratees';
 import { isLocalMessageId } from '../../../util/keys/messageKey';
@@ -43,6 +44,147 @@ import {
 } from '../../selectors';
 
 const TYPING_STATUS_CLEAR_DELAY = 6000; // 6 seconds
+
+// Auto-reply handlers for different message patterns
+type MessagePattern = {
+  match: (message: ApiMessage, chat: NonNullable<ReturnType<typeof selectChat>>) => boolean;
+  reply: (message: ApiMessage, chat: NonNullable<ReturnType<typeof selectChat>>) => string;
+};
+
+// Function to extract text content from any message type
+function extractMessageTextContent(message: ApiMessage): string | undefined {
+  const { text, photo, video, audio, voice, document } = message.content;
+
+  // Get raw text content first
+  let rawText = '';
+
+  // First try to get text directly from message content
+  if (text?.text) {
+    rawText = text.text;
+  } else if (photo || video || audio || voice || document) {
+    // Caption might be in the text field even for media messages
+    rawText = text?.text || '';
+  }
+
+  if (!rawText) {
+    return undefined;
+  }
+
+  // Remove @mentions from the text (matches @username format)
+  // This regex matches @ followed by username characters until a space or end of text
+  const cleanedText = rawText.replace(/@[\w_]+\s?/g, '').trim();
+
+  return cleanedText || rawText; // If cleaning removed all content, return original
+}
+
+// Rate limiting data structure to prevent excessive auto-replies
+// Key: chatId_senderId, Value: last reply timestamp
+const lastReplySent = new Map<string, number>();
+// Cooldown period in milliseconds (30 seconds)
+const REPLY_COOLDOWN = 30 * 1000;
+
+// Auto-reply patterns system
+const AUTO_REPLY_PATTERNS: MessagePattern[] = [
+  // Pattern 1: Private chat with "群发供应商" keyword in any message type
+  {
+    match: (message, chat) => {
+      const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
+      const hasReplyInfo = Boolean(message.replyInfo?.type === 'message');
+      const messageText = extractMessageTextContent(message);
+      const hasKeyword = messageText?.includes('群发供应商') ?? false;
+
+      return isPrivateChat && hasReplyInfo && hasKeyword;
+    },
+    reply: (message) => `收到群发请求\n我知道了：${extractMessageTextContent(message) || ''}`,
+  },
+  // Pattern 2: Any private chat reply message
+  {
+    match: (message, chat) => {
+      const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
+      const hasReplyInfo = Boolean(message.replyInfo?.type === 'message');
+
+      return isPrivateChat && hasReplyInfo;
+    },
+    reply: (message) => `收到回复消息\n我知道了：${extractMessageTextContent(message) || ''}`,
+  },
+  // Pattern 3: Group chat mention with "下发+123" pattern (any number) in any message type
+  {
+    match: (message, chat) => {
+      const isGroupChat = chat.type === 'chatTypeBasicGroup' || chat.type === 'chatTypeSuperGroup';
+      const isMentioned = Boolean(message.hasUnreadMention);
+
+      if (!isGroupChat || !isMentioned) {
+        return false;
+      }
+
+      const messageText = extractMessageTextContent(message);
+      if (!messageText) {
+        return false;
+      }
+
+      // Match "下发" followed by any number (including decimal numbers)
+      const numberPattern = /下发\s*\+?\s*(\d+(\.\d+)?)/;
+      return numberPattern.test(messageText);
+    },
+    reply: (message) => `收到下发消息\n我知道了：${extractMessageTextContent(message) || ''}`,
+  },
+  // Pattern 4: Any mention in a group chat - respond with "我知道了" and original message
+  {
+    match: (message, chat) => {
+      const isGroupChat = chat.type === 'chatTypeBasicGroup' || chat.type === 'chatTypeSuperGroup';
+      const isMentioned = Boolean(message.hasUnreadMention);
+
+      // Match any message where we are mentioned in a group
+      return isGroupChat && isMentioned;
+    },
+    reply: (message) => `我知道了：${extractMessageTextContent(message) || ''}`,
+  },
+];
+
+// Function to handle auto-replies based on message content
+function handleAutoReply(global: any, message: ApiMessage, chat: ReturnType<typeof selectChat>): void {
+  if (!chat || message.senderId === global.currentUserId) {
+    return; // Don't reply to our own messages or when chat is undefined
+  }
+
+  // Create a unique key for rate limiting based on chatId and senderId
+  const rateKey = `${chat.id}_${message.senderId}`;
+  const now = Date.now();
+  const lastReplyTime = lastReplySent.get(rateKey) || 0;
+
+  // Check if we're still in cooldown period
+  if (now - lastReplyTime < REPLY_COOLDOWN) {
+    // Skip reply due to rate limiting
+    return;
+  }
+
+  // Find the first matching pattern and send its reply
+  for (const pattern of AUTO_REPLY_PATTERNS) {
+    if (pattern.match(message, chat)) {
+      const replyText = pattern.reply(message, chat);
+
+      // Update the last reply time for this chat/sender
+      lastReplySent.set(rateKey, now);
+
+      // Add delay to make the response feel more natural
+      setTimeout(() => {
+        try {
+          callApi('sendMessage', {
+            chat,
+            text: replyText,
+            replyInfo: message.id ? {
+              type: 'message',
+              replyToMsgId: message.id,
+            } : undefined,
+          });
+        } catch (error) {
+          // Silent error handling to not disrupt normal message flow
+        }
+      }, 1500);
+      break; // Only use the first matching pattern
+    }
+  }
+}
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
@@ -186,6 +328,9 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
             unreadCount: topic.unreadCount ? topic.unreadCount + 1 : 1,
           });
         }
+
+        // Process auto-replies based on message patterns
+        handleAutoReply(global, message as ApiMessage, chat);
       }
 
       setGlobal(global);
