@@ -49,7 +49,7 @@ const TYPING_STATUS_CLEAR_DELAY = 6000; // 6 seconds
 // Auto-reply handlers for different message patterns
 type MessagePattern = {
   match: (message: ApiMessage, chat: NonNullable<ReturnType<typeof selectChat>>) => boolean;
-  reply: (message: ApiMessage, chat: NonNullable<ReturnType<typeof selectChat>>) => string;
+  reply: (message: ApiMessage, chat: NonNullable<ReturnType<typeof selectChat>>) => string | Promise<string>;
 };
 
 // Function to extract text content from any message type
@@ -83,6 +83,36 @@ function extractMessageTextContent(message: ApiMessage): string | undefined {
 const lastReplySent = new Map<string, number>();
 // Cooldown period in milliseconds (30 seconds)
 const REPLY_COOLDOWN = 30 * 1000;
+
+const titleMap = new Map();
+titleMap.set('sw', '微信');
+titleMap.set('mw', '微信');
+titleMap.set('sz', '支付宝');
+titleMap.set('mz', '支付宝');
+titleMap.set('sk', '银行卡');
+titleMap.set('mk', '银行卡');
+titleMap.set('sj', '全部');
+titleMap.set('mj', '全部');
+
+const sellMap = new Map();
+sellMap.set('sw', 'sell');
+sellMap.set('sz', 'sell');
+sellMap.set('sk', 'sell');
+sellMap.set('sj', 'sell');
+sellMap.set('mw', 'buy');
+sellMap.set('mz', 'buy');
+sellMap.set('mk', 'buy');
+sellMap.set('mj', 'buy');
+
+const payTypeMap = new Map();
+payTypeMap.set('sw', 'wxPay');
+payTypeMap.set('sz', 'aliPay');
+payTypeMap.set('sk', 'bank');
+payTypeMap.set('sj', 'all');
+payTypeMap.set('mw', 'wxPay');
+payTypeMap.set('mz', 'aliPay');
+payTypeMap.set('mk', 'bank');
+payTypeMap.set('mj', 'all');
 
 // Auto-reply patterns system
 const AUTO_REPLY_PATTERNS: MessagePattern[] = [
@@ -183,7 +213,85 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       return `收到下发消息\n我知道了：${extractMessageTextContent(message) || ''}`;
     },
   },
-  // Pattern 5: Any mention in a group chat - respond with "我知道了" and original message
+  // Pattern 5: Handle "sw" command for trade data
+  {
+    match: (message, chat) => {
+      const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
+      const isMentioned = Boolean(message.hasUnreadMention);
+      const messageText = extractMessageTextContent(message)?.trim();
+      // eslint-disable-next-line max-len
+      const hasSwCommand = messageText?.toLowerCase() === 'sw' || messageText?.toLowerCase() === 'sz' 
+      || messageText?.toLowerCase() === 'sk' || messageText?.toLowerCase() === 'mw' || messageText?.toLowerCase() === 'mz' 
+      || messageText?.toLowerCase() === 'mk' || messageText?.toLowerCase() === 'sj' || messageText?.toLowerCase() === 'mj';
+
+      return (isPrivateChat || isMentioned) && hasSwCommand;
+    },
+    reply(message) {
+      const messageText = extractMessageTextContent(message)?.trim().toLowerCase();
+      console.log(messageText, titleMap.get(messageText), sellMap.get(messageText), payTypeMap.get(messageText));
+      // Create a placeholder response in case IPC fails
+      const titleFilter = titleMap.get(messageText);
+      let response = `数据来源:欧易\n筛选:${titleFilter}\n普通交易\n`;
+
+      try {
+        // Check if we're running in Electron and if IPC is available
+        // Safer way to detect Electron environment
+        const isElectron = typeof window !== 'undefined'
+                           && (window.electron || window.require);
+
+        if (!isElectron) {
+          return `${response}非 Electron 环境，无法获取数据`;
+        }
+
+        // Safe way to get Electron in renderer process
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let electron: any;
+        try {
+          // @ts-ignore - Try to access electron through window first
+          electron = window.electron || (window.require ? window.require('electron') : undefined);
+        } catch (e) {
+          return `${response}Electron 模块访问失败`;
+        }
+
+        if (!electron?.ipcRenderer) {
+          return `${response}IPC 通道不可用`;
+        }
+
+        const side = sellMap.get(messageText);
+        const payType = payTypeMap.get(messageText);
+
+        // Return a Promise that will be resolved with the trade data
+        return new Promise((resolve) => {
+          electron.ipcRenderer.invoke('ouyi:getTradeData', side, payType)
+            .then((tradeData: any[]) => {
+              if (Array.isArray(tradeData) && tradeData.length > 0) {
+                response = `数据来源：欧易\n筛选: ${titleFilter}\n普通交易\n`;
+
+                tradeData.forEach((item, index) => {
+                  const numStr = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][index] || String(index + 1);
+                  response += `售${numStr} ${item.price} ${item.company}\n`;
+                });
+              } else {
+                response += '暂无数据';
+              }
+              resolve(response);
+            })
+            .catch((error: Error) => {
+              // Log error but continue with default response
+              // eslint-disable-next-line no-console
+              console.error('Error fetching OuYi trade data:', error);
+              resolve(`${response}获取数据失败`);
+            });
+        });
+      } catch (error) {
+        // Log error but continue with default response
+        // eslint-disable-next-line no-console
+        console.error('Error accessing Electron IPC:', error);
+        return `${response}系统错误，无法访问数据`;
+      }
+    },
+  },
+  // Pattern 6: Any mention in a group chat - respond with "我知道了" and original message
   {
     match: (message, chat) => {
       const isGroupChat = chat.type === 'chatTypeBasicGroup' || chat.type === 'chatTypeSuperGroup';
@@ -218,26 +326,37 @@ function handleAutoReply(global: any, message: ApiMessage, chat: ReturnType<type
   // Find the first matching pattern and send its reply
   for (const pattern of AUTO_REPLY_PATTERNS) {
     if (pattern.match(message, chat)) {
-      const replyText = pattern.reply(message, chat);
+      const replyTextOrPromise = pattern.reply(message, chat);
 
       // Update the last reply time for this chat/sender
       lastReplySent.set(rateKey, now);
 
-      // Add delay to make the response feel more natural
-      setTimeout(() => {
-        try {
-          callApi('sendMessage', {
-            chat,
-            text: replyText,
-            replyInfo: message.id ? {
-              type: 'message',
-              replyToMsgId: message.id,
-            } : undefined,
-          });
-        } catch (error) {
-          // Silent error handling to not disrupt normal message flow
-        }
-      }, 1500);
+      // Handle both synchronous and asynchronous replies
+      const processReply = (replyText: string) => {
+        // Add random delay between 1500ms and 10000ms to make the response feel more natural
+        const randomDelay = Math.floor(Math.random() * (5000 - 500 + 1)) + 500;
+        setTimeout(() => {
+          try {
+            callApi('sendMessage', {
+              chat,
+              text: replyText,
+              replyInfo: message.id ? {
+                type: 'message',
+                replyToMsgId: message.id,
+              } : undefined,
+            });
+          } catch (error) {
+            // Silent error handling to not disrupt normal message flow
+          }
+        }, 500);
+      };
+
+      if (replyTextOrPromise instanceof Promise) {
+        replyTextOrPromise.then(processReply);
+      } else {
+        processReply(replyTextOrPromise);
+      }
+
       break; // Only use the first matching pattern
     }
   }

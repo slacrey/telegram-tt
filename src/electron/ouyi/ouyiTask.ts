@@ -1,8 +1,10 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
-import { PAYMENT_METHODS, SIDE_MAP } from './ouyiTypes';
+
 import type { TradeItem } from './ouyiTypes';
+
 import { saveTradeInfo } from './ouyiStorage';
+import { PAYMENT_METHODS, SIDE_MAP } from './ouyiTypes';
 
 // Load environment variables
 dotenv.config();
@@ -164,4 +166,4 @@ export function stopOuYiTask() {
     // Using console.log for operational logging
     console.log('OuYi task stopped');
   }
-} 
+}

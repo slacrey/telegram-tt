@@ -26,4 +26,4 @@ export const PAYMENT_METHODS = {
 export const SIDE_MAP: Record<string, string> = {
   buy: 'sell',
   sell: 'buy',
-}; 
+};

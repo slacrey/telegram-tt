@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+
 import { setupOuYiStorageIpcHandlers } from './ouyi/ouyiStorage';
 import { startOuYiTask, stopOuYiTask } from './ouyi/ouyiTask';
 
@@ -12,6 +13,5 @@ export { startOuYiTask, stopOuYiTask };
 export function setupTaskIpcHandlers() {
   // Setup OuYi IPC handlers
   setupOuYiStorageIpcHandlers();
-  
   // Other task IPC handlers would be set up here
 }
