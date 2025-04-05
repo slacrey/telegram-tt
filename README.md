@@ -128,3 +128,66 @@ Publish configuration in `src/electron/config.yml` config file allows to set Git
 
 ## Bug reports and Suggestions
 If you find an issue with this app, let Telegram know using the [Suggestions Platform](https://bugs.telegram.org/c/4002).
+
+## API Service
+
+The API service provides a RESTful interface for third-party services to interact with Telegram.
+
+### Authentication
+
+All API requests must include an API token in the header:
+
+```
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+The token can be configured in the `.env` file using the `API_TOKEN` variable.
+
+### Endpoints
+
+#### Send Message
+
+`POST /sendMessage`
+
+Send a message to a Telegram chat or user.
+
+**Request Body:**
+
+```json
+{
+  "chatId": "123456789",  // Chat ID or username (e.g. "@username")
+  "content": "Your message text"
+}
+```
+
+**Response:**
+
+Success:
+```json
+{
+  "code": 200,
+  "message": "发送成功"
+}
+```
+
+Error:
+```json
+{
+  "code": 400,
+  "message": "错误原因"
+}
+```
+
+**Notes:**
+- The user must be logged into Telegram for messages to be sent.
+- The `chatId` can be either a numeric ID or a username (prefixed with "@").
+- Rate limiting and timeouts are applied to prevent abuse.
+
+### Configuration
+
+The API service can be configured using environment variables in the `.env` file:
+
+```
+API_PORT=9000
+API_TOKEN=secure-api-token-for-telegram-client
+```

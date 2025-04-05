@@ -17,6 +17,13 @@ const electronApi: ElectronApi = {
   setIsTrayIconEnabled: (value: boolean) => ipcRenderer.invoke(ElectronAction.SET_IS_TRAY_ICON_ENABLED, value),
   getIsTrayIconEnabled: () => ipcRenderer.invoke(ElectronAction.GET_IS_TRAY_ICON_ENABLED),
   restoreLocalStorage: () => ipcRenderer.invoke(ElectronAction.RESTORE_LOCAL_STORAGE),
+  updateApiAuthState: (isLoggedIn: boolean) => {
+    ipcRenderer.send('apiService:updateAuthState', isLoggedIn);
+  },
+  sendMessageResult: (result: { success: boolean; error?: string }) => {
+    ipcRenderer.send('apiService:sendMessageResult', result);
+    return Promise.resolve();
+  },
 
   on: (eventName: ElectronEvent, callback) => {
     const subscription = (event: IpcRendererEvent, ...args: any) => callback(...args);

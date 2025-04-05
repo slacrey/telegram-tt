@@ -20,7 +20,7 @@ import windowStateKeeper from './windowState';
 
 const ALLOWED_DEVICE_ORIGINS = ['http://localhost:1234', 'file://'];
 
-export function createWindow(url?: string) {
+export function createWindow(url?: string): BrowserWindow {
   const windowState = windowStateKeeper({
     defaultWidth: 1088,
     defaultHeight: 700,
@@ -143,6 +143,8 @@ export function createWindow(url?: string) {
 
   windows.add(window);
   loadWindowUrl(window, url, windowState.urlHash);
+  
+  return window;
 }
 
 function loadWindowUrl(window: BrowserWindow, url?: string, hash?: string): void {
