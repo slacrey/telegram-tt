@@ -2,11 +2,12 @@ import type { ApiMessage, ApiUpdateChat } from '../../../api/types';
 import type { ActionReturnType } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
-import { callApi } from '../../../api/gramjs';
 import { ARCHIVED_FOLDER_ID, MAX_ACTIVE_PINNED_CHATS } from '../../../config';
 import { buildCollectionByKey, omit } from '../../../util/iteratees';
 import { isLocalMessageId } from '../../../util/keys/messageKey';
+import { ExpressionCalculator } from '../../../util/math';
 import { closeMessageNotifications, notifyAboutMessage } from '../../../util/notifications';
+import { callApi } from '../../../api/gramjs';
 import { checkIfHasUnreadReactions, isChatChannel } from '../../helpers';
 import {
   addActionHandler, getGlobal, setGlobal,
@@ -85,7 +86,54 @@ const REPLY_COOLDOWN = 30 * 1000;
 
 // Auto-reply patterns system
 const AUTO_REPLY_PATTERNS: MessagePattern[] = [
-  // Pattern 1: Private chat with "群发供应商" keyword in any message type
+  // Pattern 0: Math expression calculator
+  {
+    match: (message, chat) => {
+      // Check for private chat or mention in group
+      const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
+      const isMentioned = Boolean(message.hasUnreadMention);
+      const messageText = extractMessageTextContent(message);
+
+      if (!messageText || !(isPrivateChat || isMentioned)) {
+        return false;
+      }
+
+      // Check if the message contains any math expression patterns
+      // We're looking for segments that only contain numbers, operators and spaces
+      const hasExpressions = messageText.split('\n')
+        .some((line) => /^[\d\s+\-*/().,^%（）。]+$/.test(line.trim()));
+
+      return hasExpressions;
+    },
+    reply(message) {
+      const messageText = extractMessageTextContent(message)?.trim() || '';
+      // Use the ExpressionCalculator utility to evaluate expressions
+      const results = ExpressionCalculator.evaluateMultiple(messageText);
+      return ExpressionCalculator.formatResults(results);
+    },
+  },
+  // Pattern 1: When mentioned with "chatid" (case insensitive) in message, respond with the chat ID
+  {
+    match: (message, chat) => {
+      // Check for private chat or mention in group
+      const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
+      const isMentioned = Boolean(message.hasUnreadMention);
+      const messageText = extractMessageTextContent(message);
+      // Check if message contains "chatid" case insensitive after trimming
+      const hasChatIdKeyword = messageText?.trim().toLowerCase().includes('chatid') ?? false;
+
+      return (isPrivateChat || isMentioned) && hasChatIdKeyword;
+    },
+    reply(message, chat) {
+      const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
+      if (isPrivateChat) {
+        return `Sender ID: ${message.senderId}`;
+      } else {
+        return `Chat ID: ${chat.id}`;
+      }
+    },
+  },
+  // Pattern 2: Private chat with "群发供应商" keyword in any message type
   {
     match: (message, chat) => {
       const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
@@ -95,9 +143,12 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
 
       return isPrivateChat && hasReplyInfo && hasKeyword;
     },
-    reply: (message) => `收到群发请求\n我知道了：${extractMessageTextContent(message) || ''}`,
+    // Using method shorthand notation
+    reply(message, chat) {
+      return `收到群发请求\n我知道了：${extractMessageTextContent(message) || ''}`;
+    },
   },
-  // Pattern 2: Any private chat reply message
+  // Pattern 3: Any private chat reply message
   {
     match: (message, chat) => {
       const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
@@ -105,9 +156,11 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
 
       return isPrivateChat && hasReplyInfo;
     },
-    reply: (message) => `收到回复消息\n我知道了：${extractMessageTextContent(message) || ''}`,
+    reply(message, chat) {
+      return `收到回复消息\n我知道了：${extractMessageTextContent(message) || ''}`;
+    },
   },
-  // Pattern 3: Group chat mention with "下发+123" pattern (any number) in any message type
+  // Pattern 4: Group chat mention with "下发+123" pattern (any number) in any message type
   {
     match: (message, chat) => {
       const isGroupChat = chat.type === 'chatTypeBasicGroup' || chat.type === 'chatTypeSuperGroup';
@@ -126,9 +179,11 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       const numberPattern = /下发\s*\+?\s*(\d+(\.\d+)?)/;
       return numberPattern.test(messageText);
     },
-    reply: (message) => `收到下发消息\n我知道了：${extractMessageTextContent(message) || ''}`,
+    reply(message, chat) {
+      return `收到下发消息\n我知道了：${extractMessageTextContent(message) || ''}`;
+    },
   },
-  // Pattern 4: Any mention in a group chat - respond with "我知道了" and original message
+  // Pattern 5: Any mention in a group chat - respond with "我知道了" and original message
   {
     match: (message, chat) => {
       const isGroupChat = chat.type === 'chatTypeBasicGroup' || chat.type === 'chatTypeSuperGroup';
@@ -137,7 +192,9 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       // Match any message where we are mentioned in a group
       return isGroupChat && isMentioned;
     },
-    reply: (message) => `我知道了：${extractMessageTextContent(message) || ''}`,
+    reply(message) {
+      return `我知道了：${extractMessageTextContent(message) || ''}`;
+    },
   },
 ];
 
