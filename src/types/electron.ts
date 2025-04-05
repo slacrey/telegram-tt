@@ -38,6 +38,10 @@ export interface ElectronApi {
   restoreLocalStorage: () => Promise<void>;
   updateApiAuthState: (isLoggedIn: boolean) => void;
   sendMessageResult: (result: { success: boolean; error?: string }) => Promise<void>;
+  // IPC renderer interface for communication with main process
+  ipcRenderer: {
+    invoke: (channel: string, ...args: any[]) => Promise<any>;
+  };
   on: (eventName: ElectronEvent, callback: any) => VoidFunction;
 }
 

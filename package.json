@@ -138,6 +138,7 @@
   "dependencies": {
     "@cryptography/aes": "^0.1.1",
     "async-mutex": "^0.5.0",
+    "axios": "^1.8.4",
     "big-integer": "github:painor/BigInteger.js",
     "cors": "^2.8.5",
     "croppie": "^2.6.5",

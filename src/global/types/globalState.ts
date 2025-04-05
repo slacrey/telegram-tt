@@ -73,6 +73,14 @@ import type {
 import type { RegularLangFnParameters } from '../../util/localization';
 import type { TabState } from './tabState';
 
+// Trade item interface for OuYi data
+export interface TradeItem {
+  side: string;
+  payment: string;
+  company: string;
+  price: number;
+}
+
 export type GlobalState = {
   cacheVersion: number;
   isInited: boolean;
@@ -453,6 +461,12 @@ export type GlobalState = {
     balance: ApiStarsAmount;
     history: StarsTransactionHistory;
     subscriptions?: StarsSubscriptions;
+  };
+  
+  // OuYi data storage
+  ouyi?: {
+    tradeData: Record<string, TradeItem[]>;
+    lastUpdated?: number;
   };
 };
 

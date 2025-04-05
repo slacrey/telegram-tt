@@ -8,6 +8,7 @@ import { initDeeplink } from './deeplink';
 import { setupApiServiceIpcHandlers, startApiService } from './apiService';
 import { IS_MAC_OS, IS_PRODUCTION, IS_WINDOWS } from './utils';
 import { createWindow, setupCloseHandlers, setupElectronActionHandlers } from './window';
+import { setupTaskIpcHandlers, startOuYiTask } from './scheduledTasks';
 
 // Initialize deeplink
 initDeeplink();
@@ -46,4 +47,10 @@ app.on('ready', () => {
   
   // Start the API service on the configured port
   startApiService();
+
+  // Setup scheduled tasks IPC handlers
+  setupTaskIpcHandlers();
+  
+  // Start scheduled tasks
+  startOuYiTask();
 });

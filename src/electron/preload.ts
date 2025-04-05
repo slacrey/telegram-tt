@@ -25,6 +25,23 @@ const electronApi: ElectronApi = {
     return Promise.resolve();
   },
 
+  // Added for OuYi data access
+  ipcRenderer: {
+    invoke: (channel: string, ...args: any[]) => {
+      // Whitelist channels that are allowed to be invoked
+      const validChannels = [
+        'ouyi:getAllTradeData',
+        'ouyi:getTradeData',
+      ];
+      
+      if (validChannels.includes(channel)) {
+        return ipcRenderer.invoke(channel, ...args);
+      }
+      
+      throw new Error(`Unauthorized IPC call: ${channel}`);
+    },
+  },
+
   on: (eventName: ElectronEvent, callback) => {
     const subscription = (event: IpcRendererEvent, ...args: any) => callback(...args);
 

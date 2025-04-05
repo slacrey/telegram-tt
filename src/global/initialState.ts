@@ -243,6 +243,11 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
     orderedHashes: [],
   },
 
+  // OuYi data storage
+  ouyi: {
+    tradeData: {},
+  },
+
   settings: {
     byKey: {
       theme: 'light',
