@@ -35,6 +35,7 @@ export function saveTradeInfo(side: string, payment: string, tradeList: TradeIte
 
   fs.writeFileSync(filePath, JSON.stringify(tradeList), 'utf8');
   // Using console.log for operational logging
+  // eslint-disable-next-line no-console
   console.log(`Saved OuYi trade data for ${side}/${payment} to ${filePath}`);
 }
 
@@ -60,6 +61,7 @@ export function getAllTradeData(): Record<string, TradeItem[]> {
           result[key] = JSON.parse(content);
         } catch (e) {
           // Using console.error for error logging
+          // eslint-disable-next-line no-console
           console.error(`Error parsing JSON from ${file}:`, e);
         }
       }
@@ -68,6 +70,7 @@ export function getAllTradeData(): Record<string, TradeItem[]> {
     return result;
   } catch (error) {
     // Using console.error for error logging
+    // eslint-disable-next-line no-console
     console.error('Error getting OuYi trade data:', error);
     return {};
   }
@@ -92,6 +95,7 @@ export function getTradeData(side: string, payment: string): TradeItem[] {
     return [];
   } catch (error) {
     // Using console.error for error logging
+    // eslint-disable-next-line no-console
     console.error(`Error getting OuYi trade data for ${side}/${payment}:`, error);
     return [];
   }

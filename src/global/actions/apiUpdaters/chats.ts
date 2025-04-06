@@ -54,7 +54,14 @@ type MessagePattern = {
 
 // Function to extract text content from any message type
 function extractMessageTextContent(message: ApiMessage): string | undefined {
-  const { text, photo, video, audio, voice, document } = message.content;
+  const {
+    text,
+    photo,
+    video,
+    audio,
+    voice,
+    document,
+  } = message.content;
 
   // Get raw text content first
   let rawText = '';
@@ -219,16 +226,15 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
       const isMentioned = Boolean(message.hasUnreadMention);
       const messageText = extractMessageTextContent(message)?.trim();
-      // eslint-disable-next-line max-len
-      const hasSwCommand = messageText?.toLowerCase() === 'sw' || messageText?.toLowerCase() === 'sz' 
-      || messageText?.toLowerCase() === 'sk' || messageText?.toLowerCase() === 'mw' || messageText?.toLowerCase() === 'mz' 
-      || messageText?.toLowerCase() === 'mk' || messageText?.toLowerCase() === 'sj' || messageText?.toLowerCase() === 'mj';
+
+      // Check if message matches any of the command codes
+      const commandCodes = ['sw', 'sz', 'sk', 'mw', 'mz', 'mk', 'sj', 'mj'];
+      const hasSwCommand = Boolean(messageText && commandCodes.includes(messageText.toLowerCase()));
 
       return (isPrivateChat || isMentioned) && hasSwCommand;
     },
     reply(message) {
       const messageText = extractMessageTextContent(message)?.trim().toLowerCase();
-      console.log(messageText, titleMap.get(messageText), sellMap.get(messageText), payTypeMap.get(messageText));
       // Create a placeholder response in case IPC fails
       const titleFilter = titleMap.get(messageText);
       let response = `数据来源:欧易\n筛选:${titleFilter}\n普通交易\n`;
@@ -279,7 +285,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
             .catch((error: Error) => {
               // Log error but continue with default response
               // eslint-disable-next-line no-console
-              console.error('Error fetching OuYi trade data:', error);
+              console.error('Error fetching OuYi trade data', error);
               resolve(`${response}获取数据失败`);
             });
         });
@@ -348,7 +354,7 @@ function handleAutoReply(global: any, message: ApiMessage, chat: ReturnType<type
           } catch (error) {
             // Silent error handling to not disrupt normal message flow
           }
-        }, 500);
+        }, randomDelay);
       };
 
       if (replyTextOrPromise instanceof Promise) {

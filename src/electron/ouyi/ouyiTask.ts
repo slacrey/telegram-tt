@@ -12,7 +12,6 @@ dotenv.config();
 // Environment variables for scheduled tasks
 const TASK_OUYI_ENABLED = process.env.TASK_OUYI_ENABLED === 'true';
 const TASK_OUYI_INTERVAL = Number(process.env.TASK_OUYI_INTERVAL || '300000'); // Default: 5 minutes
-const TASK_OUYI_NAME = process.env.TASK_OUYI_NAME || 'Fetch OuYi Trading Data';
 
 // Task intervals storage
 const taskIntervals: Record<string, NodeJS.Timeout> = {};
@@ -51,7 +50,8 @@ async function getTradeInfo(side: string, payment: string) {
     return response.data;
   } catch (error) {
     // Using console.error for error logging
-    console.error(`Error fetching OuYi data for ${side}/${payment}:`, error);
+    // eslint-disable-next-line no-console
+    console.error(`Error fetching OuYi data for ${side}/${payment}:`, (error as Error).message);
     return undefined;
   }
 }
@@ -99,6 +99,7 @@ async function processTradeDirection(side: string, payment: string) {
   try {
     if (!(side in SIDE_MAP)) {
       // Using console.error for error logging
+      // eslint-disable-next-line no-console
       console.error(`Invalid side: ${side}`);
       return;
     }
@@ -112,6 +113,7 @@ async function processTradeDirection(side: string, payment: string) {
     saveTradeInfo(side, payment, tradeList);
   } catch (error) {
     // Using console.error for error logging
+    // eslint-disable-next-line no-console
     console.error(`Error processing ${side}/${payment}:`, error);
   }
 }
@@ -120,9 +122,6 @@ async function processTradeDirection(side: string, payment: string) {
  * Runs the OuYi data collection task
  */
 async function runOuYiTask() {
-  // Using console.log for operational logging
-  console.log(`Running OuYi task: ${TASK_OUYI_NAME}`);
-
   for (const [paymentKey] of Object.entries(PAYMENT_METHODS)) {
     // Process buy direction (which means fetching sell orders)
     await processTradeDirection('buy', paymentKey);
@@ -130,9 +129,6 @@ async function runOuYiTask() {
     // Process sell direction (which means fetching buy orders)
     await processTradeDirection('sell', paymentKey);
   }
-
-  // Using console.log for operational logging
-  console.log('OuYi task completed');
 }
 
 /**
@@ -141,12 +137,10 @@ async function runOuYiTask() {
 export function startOuYiTask() {
   if (!TASK_OUYI_ENABLED) {
     // Using console.log for operational logging
+    // eslint-disable-next-line no-console
     console.log('OuYi task is disabled');
     return;
   }
-
-  // Using console.log for operational logging
-  console.log(`Starting OuYi task with interval: ${TASK_OUYI_INTERVAL}ms`);
 
   // Run immediately
   runOuYiTask();
@@ -163,7 +157,5 @@ export function stopOuYiTask() {
   if (taskIntervals.ouyi) {
     clearInterval(taskIntervals.ouyi);
     delete taskIntervals.ouyi;
-    // Using console.log for operational logging
-    console.log('OuYi task stopped');
   }
 }
