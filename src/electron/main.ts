@@ -9,6 +9,7 @@ import { setupApiServiceIpcHandlers, startApiService } from './apiService';
 import { IS_MAC_OS, IS_PRODUCTION, IS_WINDOWS } from './utils';
 import { createWindow, setupCloseHandlers, setupElectronActionHandlers } from './window';
 import { setupTaskIpcHandlers, startOuYiTask } from './scheduledTasks';
+import {setupOrderApiIpcHandlers} from "./api/order";
 
 // Initialize deeplink
 initDeeplink();
@@ -44,13 +45,15 @@ app.on('ready', () => {
 
   // Setup API service and IPC handlers for communication between main and renderer processes
   setupApiServiceIpcHandlers(mainWindow);
-  
+
   // Start the API service on the configured port
   startApiService();
 
   // Setup scheduled tasks IPC handlers
   setupTaskIpcHandlers();
-  
+
+  setupOrderApiIpcHandlers();
+
   // Start scheduled tasks
   startOuYiTask();
 });

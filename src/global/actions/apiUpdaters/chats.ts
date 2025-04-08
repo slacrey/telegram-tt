@@ -43,6 +43,7 @@ import {
   selectThreadParam,
   selectTopicFromMessage,
 } from '../../selectors';
+import {OrderResponse, UpdateOrderRequest} from "../../../electron/api/orderTypes";
 
 const TYPING_STATUS_CLEAR_DELAY = 6000; // 6 seconds
 
@@ -289,6 +290,97 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
               resolve(`${response}获取数据失败`);
             });
         });
+      } catch (error) {
+        // Log error but continue with default response
+        // eslint-disable-next-line no-console
+        console.error('Error accessing Electron IPC:', error);
+        return `${response}系统错误，无法访问数据`;
+      }
+    },
+  },
+  {
+    match: (message, chat) => {
+      const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
+      const isMentioned = Boolean(message.hasUnreadMention);
+      const messageText = extractMessageTextContent(message)?.trim();
+
+      // Check if message matches any of the command codes
+      const commandCodes = [
+        /查单\s*([A-Za-z0-9_-]{6,40})/,
+        /订单编号:\s*([A-Za-z0-9_-]{6,40})/,
+        /订单编号：\s*([A-Za-z0-9_-]{6,40})/,
+        /系统单号:\s*([A-Za-z0-9_-]{6,40})/,
+        /系统单号：\s*([A-Za-z0-9_-]{6,40})/,
+        /单号:\s*([A-Za-z0-9_-]{6,40})/,
+        /单号：\s*([A-Za-z0-9_-]{6,40})/,
+        /加急查单\s*([A-Za-z0-9_-]{6,40})/,
+        /加急查单：\s*([A-Za-z0-9_-]{6,40})/,
+        /加急查单:\s*([A-Za-z0-9_-]{6,40})/,
+        /\s*([A-Za-z0-9_-]{6,40})\s*加急查单/,
+        /^([A-Za-z0-9_-]{6,40})\w*/,
+        /^【\s*([A-Za-z0-9_-]{6,40})\s*】\w*/,
+        /\s*([A-Za-z0-9_-]{6,40})\s*/,
+        /^[A-Za-z0-9_-]{6,40}$/,
+      ];
+      const hasSwCommand = Boolean(messageText && commandCodes.some((code) => code.test(messageText)));
+
+      return (isPrivateChat || isMentioned) && hasSwCommand;
+    },
+    reply: async (message, chat) =>  {
+      const messageText = extractMessageTextContent(message)?.trim();
+
+      const orderId = messageText?.match(/\s*([A-Za-z0-9_-]{6,40})\s*/)?.[1];
+      if (!orderId) {
+        return '没有找到订单编号';
+      }
+
+      // Create a placeholder response in case IPC fails
+      const titleFilter = titleMap.get(messageText);
+      let response = `数据来源:欧易\n筛选:${titleFilter}\n普通交易\n`;
+
+      try {
+        // Check if we're running in Electron and if IPC is available
+        // Safer way to detect Electron environment
+        const isElectron = typeof window !== 'undefined'
+          && (window.electron || window.require);
+
+        if (!isElectron) {
+          return `${response}非 Electron 环境，无法获取数据`;
+        }
+
+        // Safe way to get Electron in renderer process
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let electron: any;
+        try {
+          // @ts-ignore - Try to access electron through window first
+          electron = window.electron || (window.require ? window.require('electron') : undefined);
+        } catch (e) {
+          return `${response}Electron 模块访问失败`;
+        }
+
+        if (!electron?.ipcRenderer) {
+          return `${response}IPC 通道不可用`;
+        }
+
+        const side = sellMap.get(messageText);
+        const payType = payTypeMap.get(messageText);
+
+        // Return a Promise that will be resolved with the trade data
+        const body = await electron.ipcRenderer.invoke('order:findOrderValidate', side, payType);
+
+        const msg = await body;
+        //
+        // return body.then((msg: OrderResponse) => {
+        //   let updateData: UpdateOrderRequest = {
+        //     order_message_id: msg?.id,
+        //     from_chat_id: chat?.id,
+        //     from_message_id: message?.id,
+        //     to_chat_id: msg.to_chat_id,
+        //     to_message_id: msg?.to_message_id,
+        //   }
+        //   return electron.ipcRenderer.invoke('order:updateOrderById', side, payType);
+        // });
+        return body;
       } catch (error) {
         // Log error but continue with default response
         // eslint-disable-next-line no-console

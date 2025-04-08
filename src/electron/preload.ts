@@ -32,12 +32,14 @@ const electronApi: ElectronApi = {
       const validChannels = [
         'ouyi:getAllTradeData',
         'ouyi:getTradeData',
+        'order:findOrderValidate',
+        'order:updateOrderById',
       ];
-      
+
       if (validChannels.includes(channel)) {
         return ipcRenderer.invoke(channel, ...args);
       }
-      
+
       throw new Error(`Unauthorized IPC call: ${channel}`);
     },
   },
