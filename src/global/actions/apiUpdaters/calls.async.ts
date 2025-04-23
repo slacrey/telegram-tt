@@ -1,4 +1,4 @@
-import type { ApiPhoneCall } from '../../../api/types';
+import type {ApiMessage, ApiPhoneCall} from '../../../api/types';
 import type { ApiCallProtocol } from '../../../lib/secret-sauce';
 import type { ActionReturnType } from '../../types';
 
@@ -12,16 +12,36 @@ import { omit } from '../../../util/iteratees';
 import * as langProvider from '../../../util/oldLangProvider';
 import { EMOJI_DATA, EMOJI_OFFSETS } from '../../../util/phoneCallEmojiConstants';
 import { ARE_CALLS_SUPPORTED } from '../../../util/windowEnvironment';
-import { callApi } from '../../../api/gramjs';
+import {callApi, callApiLocal} from '../../../api/gramjs';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import { updateGroupCall, updateGroupCallParticipant } from '../../reducers/calls';
 import { updateTabState } from '../../reducers/tabs';
 import { selectActiveGroupCall, selectGroupCallParticipant, selectPhoneCallUser } from '../../selectors/calls';
+import {selectChat, selectIsChatWithSelf} from "../../selectors";
+import {isMessageLocal} from "../../helpers";
+import {handleAutoReply} from "./reply";
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   const { activeGroupCallId } = global.groupCalls;
 
   switch (update['@type']) {
+    case 'newMessage': {
+      const {
+        chatId, id, message,
+      } = update;
+
+      const isLocal = isMessageLocal(message as ApiMessage);
+      if (!isLocal && !message.isOutgoing && !selectIsChatWithSelf(global, chatId)) {
+        const targetChat = selectChat(global, chatId);
+        if (targetChat) {
+
+          handleAutoReply(global, message as ApiMessage, targetChat).finally(() => {
+            // Handle completion if needed
+          });
+        }
+      }
+      break;
+    }
     case 'updateGroupCallLeavePresentation': {
       actions.toggleGroupCallPresentation({ value: false });
       break;
