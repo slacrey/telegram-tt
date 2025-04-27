@@ -36,7 +36,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         if (targetChat) {
           const now = Date.now();
           // Check if message is from history 1 minute ago
-          if (message.date && message.date < now / 1000 - 60) {
+          if (message.date && message.date < now / 1000 - 5) {
             return;
           }
 

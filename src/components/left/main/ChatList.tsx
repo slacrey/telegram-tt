@@ -23,6 +23,7 @@ import buildClassName from '../../../util/buildClassName';
 import { getOrderKey, getPinnedChatsCount } from '../../../util/folderManager';
 import { getServerTime } from '../../../util/serverTime';
 import { IS_APP, IS_MAC_OS } from '../../../util/windowEnvironment';
+import { randomChatClick } from '../../../utils/randomChatClick';
 
 import usePeerStoriesPolling from '../../../hooks/polling/usePeerStoriesPolling';
 import useTopOverscroll from '../../../hooks/scroll/useTopOverscroll';
@@ -207,6 +208,26 @@ const ChatList: FC<OwnProps> = ({
   });
 
   const renderedOverflowTrigger = useTopOverscroll(containerRef, handleShowStoryRibbon, handleHideStoryRibbon, isSaved);
+
+  // 添加随机点击聊天的功能
+  useEffect(() => {
+    if (isActive && orderedIds?.length) {
+      const getRandomInterval = () => Math.floor(Math.random() * (30 * 60 * 1000 - 60 * 1000) + 60 * 1000); // 随机1-30分钟
+      let interval = setInterval(() => {
+        randomChatClick(orderedIds);
+        clearInterval(interval);
+        interval = setInterval(() => {
+          randomChatClick(orderedIds);
+        }, getRandomInterval());
+      }, getRandomInterval());
+
+      return () => {
+        clearInterval(interval);
+        return undefined;
+      };
+    }
+    return undefined;
+  }, [isActive, orderedIds]);
 
   function renderChats() {
     const viewportOffset = orderedIds!.indexOf(viewportIds![0]);

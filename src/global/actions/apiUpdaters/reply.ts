@@ -623,14 +623,6 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
             messageTextMap.set(id, msgText);
           }
           if (msgText === replyMessageText) {
-
-            // const senderId = msg.senderId?.toString() || '';
-            // const senderUser = selectUser(global, senderId);
-            // console.log(msg, senderUser)
-            // if (!senderUser || isUserBot(senderUser)) {
-            //   break;
-            // }
-            const senderUsername = getMessageSender(global, msg);
             foundMessageId = Number(id);
             break;
           }
