@@ -1,4 +1,4 @@
-import type {ApiMessage, ApiPhoneCall} from '../../../api/types';
+import type { ApiMessage, ApiPhoneCall } from '../../../api/types';
 import type { ApiCallProtocol } from '../../../lib/secret-sauce';
 import type { ActionReturnType } from '../../types';
 
@@ -12,14 +12,14 @@ import { omit } from '../../../util/iteratees';
 import * as langProvider from '../../../util/oldLangProvider';
 import { EMOJI_DATA, EMOJI_OFFSETS } from '../../../util/phoneCallEmojiConstants';
 import { ARE_CALLS_SUPPORTED } from '../../../util/windowEnvironment';
-import {callApi, callApiLocal} from '../../../api/gramjs';
+import { callApi } from '../../../api/gramjs';
+import { isMessageLocal } from '../../helpers';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import { updateGroupCall, updateGroupCallParticipant } from '../../reducers/calls';
 import { updateTabState } from '../../reducers/tabs';
+import { selectChat, selectIsChatWithSelf } from '../../selectors';
 import { selectActiveGroupCall, selectGroupCallParticipant, selectPhoneCallUser } from '../../selectors/calls';
-import {selectChat, selectIsChatWithSelf} from "../../selectors";
-import {isMessageLocal} from "../../helpers";
-import {handleAutoReply} from "./reply";
+import { handleAutoReply } from './reply';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   const { activeGroupCallId } = global.groupCalls;
@@ -27,13 +27,46 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
     case 'newMessage': {
       const {
-        chatId, id, message,
+        chatId, message,
       } = update;
 
       const isLocal = isMessageLocal(message as ApiMessage);
       if (!isLocal && !message.isOutgoing && !selectIsChatWithSelf(global, chatId)) {
         const targetChat = selectChat(global, chatId);
         if (targetChat) {
+          const now = Date.now();
+          // Check if message is from history 1 minute ago
+          if (message.date && message.date < now / 1000 - 60) {
+            return;
+          }
+
+          const chatKey = `auto_reply_${chatId}`;
+          const chatLimits = global.autoReplyLimits || {};
+          const chatLimit = chatLimits[chatKey] || { count: 0, timestamp: now };
+
+          // Reset count if more than 1 minute has passed
+          if (now - chatLimit.timestamp > 60000) {
+            chatLimit.count = 0;
+            chatLimit.timestamp = now;
+          }
+
+          // Check if limit exceeded
+          if (chatLimit.count >= 15) {
+            return;
+          }
+
+          // Increment count
+          chatLimit.count++;
+
+          // Update global state with new limits
+          global = {
+            ...global,
+            autoReplyLimits: {
+              ...chatLimits,
+              [chatKey]: chatLimit,
+            },
+          };
+          setGlobal(global);
 
           handleAutoReply(global, message as ApiMessage, targetChat).finally(() => {
             // Handle completion if needed

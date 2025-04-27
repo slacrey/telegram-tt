@@ -16,10 +16,11 @@ import {
   selectCanForwardMessage,
   selectChatFullInfo, selectChatLastMessageId, selectChatMessage, selectChatMessages,
   selectForwardedMessageIdsByGroupId,
-  selectForwardedSender, selectForwardsCanBeSentToChat, selectIsChatWithBot, selectMessageReplyInfo,
+  selectForwardedSender, selectForwardsCanBeSentToChat, selectIsChatWithBot, selectIsTrustedBot, selectMessageReplyInfo,
   selectReplyMessage,
   selectUser,
 } from '../../selectors';
+import { isUserBot } from '../../helpers/users';
 
 // Auto-reply handlers for different message patterns
 type MessagePattern = {
@@ -110,13 +111,76 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       return `可用指令列表：
 1. 清除接收人 - 清除当前群组的所有接收人
 2. 清除转发人 - 清除当前群组的所有转发人
-3. 添加转发人 - 添加转发人（回复要添加的用户消息）
-4. 添加接收人 - 添加接收人（回复要添加的用户消息）
+3. 添加转发人 - 添加转发人 @xxxx
+4. 添加接收人 - 添加接收人 @xxxx
 5. 查看转发人 - 查看当前群组的所有转发人
 6. 查看接收人 - 查看当前群组的所有接收人
 7. 添加转发过滤 - 添加转发过滤（回复要过滤的消息），添加后包含该内容的消息不会被转发
 8. 添加接收过滤 - 添加接收过滤（回复要过滤的消息），添加后包含该内容的消息不会被回复
-9. 添加接收包含 - 添加接收包含（回复要包含的消息），添加后必须包含该内容的消息才会被接收处理`;
+9. 添加接收包含 - 添加接收包含（回复要包含的消息），添加后必须包含该内容的消息才会被接收处理
+10. 查看转发过滤 - 查看当前群组的所有转发过滤
+11. 查看接收过滤 - 查看当前群组的所有接收过滤
+12. 查看接收包含 - 查看当前群组的所有接收包含`;
+    },
+  },
+  {
+    match: (_global, message, chat) => {
+      const isNotPrivateChat = chat.type !== 'chatTypePrivate' && chat.type !== 'chatTypeSecret';
+      const messageText = extractMessageTextContent(message);
+      const hasKeyword = messageText?.includes('查看接收过滤') ?? false;
+
+      return isNotPrivateChat && hasKeyword;
+    },
+    reply: async (_global, message) => {
+      const config = await loadTargetUserConfig();
+      const chatId = message.chatId;
+
+      if (!config.filters || !config.filters[chatId] || config.filters[chatId].length === 0) {
+        return '当前群组没有设置接收过滤';
+      }
+
+      const filters = config.filters[chatId];
+      return `当前群组的接收过滤:\n${filters.join('\n')}`;
+    },
+  },
+  {
+    match: (_global, message, chat) => {
+      const isNotPrivateChat = chat.type !== 'chatTypePrivate' && chat.type !== 'chatTypeSecret';
+      const messageText = extractMessageTextContent(message);
+      const hasKeyword = messageText?.includes('查看转发过滤') ?? false;
+
+      return isNotPrivateChat && hasKeyword;
+    },
+    reply: async (_global, message) => {
+      const config = await loadSourceUserConfig();
+      const chatId = message.chatId;
+
+      if (!config.filters || !config.filters[chatId] || config.filters[chatId].length === 0) {
+        return '当前群组没有设置转发过滤';
+      }
+
+      const filters = config.filters[chatId];
+      return `当前群组的转发过滤:\n${filters.join('\n')}`;
+    },
+  },
+  {
+    match: (_global, message, chat) => {
+      const isNotPrivateChat = chat.type !== 'chatTypePrivate' && chat.type !== 'chatTypeSecret';
+      const messageText = extractMessageTextContent(message);
+      const hasKeyword = messageText?.includes('查看接收包含') ?? false;
+
+      return isNotPrivateChat && hasKeyword;
+    },
+    reply: async (_global, message) => {
+      const config = await loadTargetUserConfig();
+      const chatId = message.chatId;
+
+      if (!config.includes || !config.includes[chatId] || config.includes[chatId].length === 0) {
+        return '当前群组没有设置接收包含';
+      }
+
+      const includes = config.includes[chatId];
+      return `当前群组的接收包含:\n${includes.join('\n')}`;
     },
   },
   {
@@ -442,15 +506,21 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
   {
     match: async (global, message, chat) => {
       const isNotPrivateChat = chat.type !== 'chatTypePrivate' && chat.type !== 'chatTypeSecret';
-      const hasNoReplyInfo = !message.replyInfo;
       const config = await loadSourceUserConfig();
       const senderUsername = getMessageSender(global, message);
       const chatId = message.chatId;
       const isUserInRules = (senderUsername && config.rules[chatId]) ? config.rules[chatId].includes(senderUsername) : false;
       const messageText = extractMessageTextContent(message);
-      const hasOrderNumber = messageText ? /[A-Za-z0-9_-]{6,40}/.test(messageText) : false;
+      const hasOrderNumber = messageText ? /\b(?=[A-Za-z0-9_-]{6,40}\b)(?=.*[A-Za-z])[A-Za-z0-9_-]{6,40}\b/.test(messageText) : false;
 
-      return isNotPrivateChat && hasNoReplyInfo && isUserInRules && hasOrderNumber;
+      if (config.filters && config.filters[chat.id]) {
+        const isInFilters = config.filters[chat.id].some((filter) => messageText?.toLowerCase().includes(filter.toLowerCase()));
+        if (isInFilters) {
+          return false;
+        }
+      }
+
+      return isNotPrivateChat && isUserInRules && hasOrderNumber;
     },
     reply: async (_global, message, chat) => {
       // Check if message is already forwarded and not from current user
@@ -484,7 +554,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
             // eslint-disable-next-line no-console
             console.error('Error forwarding message:', error);
           });
-      }, Math.floor(Math.random() * (3000 - 50 + 1)) + 50);
+      }, Math.floor(Math.random() * (3500 - 100 + 1)) + 100);
 
       return Promise.resolve(undefined);
     },
@@ -504,6 +574,14 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       const hasIncludeMatch = config.includes && config.includes[chatId]
         ? config.includes[chatId].some((include) => messageText?.toLowerCase().includes(include.toLowerCase()))
         : true;
+
+      if (config.filters && config.filters[chat.id]) {
+        const hasFilterMatch = config.filters[chat.id].some((filter) => messageText?.toLowerCase().includes(filter.toLowerCase()));
+        if (hasFilterMatch) {
+          return false;
+        }
+      }
+
       return isNotPrivateChat && hasReplyInfo && isUserInRules && hasCallbackKeywords && hasIncludeMatch;
     },
     reply: async (global, message, chat) => {
@@ -544,17 +622,23 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
             msgText = extractRawMessageText(msg);
             messageTextMap.set(id, msgText);
           }
-
-          if (msgText?.includes('消息已转发')) continue;
-
           if (msgText === replyMessageText) {
+
+            // const senderId = msg.senderId?.toString() || '';
+            // const senderUser = selectUser(global, senderId);
+            // console.log(msg, senderUser)
+            // if (!senderUser || isUserBot(senderUser)) {
+            //   break;
+            // }
+            const senderUsername = getMessageSender(global, msg);
             foundMessageId = Number(id);
             break;
           }
         }
 
-        // Get the original message ID from multiple possible sources
-        const originalMessageId = foundMessageId || replyMessage.id;
+        if (!foundMessageId) {
+          return Promise.resolve(undefined);
+        }
 
         // Add delay to make the response feel more natural
         setTimeout(async () => {
@@ -564,7 +648,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
               text: replyText,
               replyInfo: {
                 type: 'message',
-                replyToMsgId: originalMessageId,
+                replyToMsgId: foundMessageId,
               },
             });
           } catch (error) {

@@ -70,8 +70,8 @@ import type {
   TopicsInfo,
   WebPageMediaSize,
 } from '../../types';
-import type { RegularLangFnParameters } from '../../util/localization';
-import type { TabState } from './tabState';
+import type {RegularLangFnParameters} from '../../util/localization';
+import type {TabState} from './tabState';
 
 export type GlobalState = {
   cacheVersion: number;
@@ -454,6 +454,7 @@ export type GlobalState = {
     history: StarsTransactionHistory;
     subscriptions?: StarsSubscriptions;
   };
+  autoReplyLimits: any
 };
 
 export type RequiredGlobalState = GlobalState & { _: never };
