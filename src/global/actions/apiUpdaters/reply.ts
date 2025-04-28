@@ -511,7 +511,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       const chatId = message.chatId;
       const isUserInRules = (senderUsername && config.rules[chatId]) ? config.rules[chatId].includes(senderUsername) : false;
       const messageText = extractMessageTextContent(message);
-      const hasOrderNumber = messageText ? /\b(?=[A-Za-z0-9_-]{6,40}\b)(?=.*[A-Za-z])[A-Za-z0-9_-]{6,40}\b/.test(messageText) : false;
+      const hasOrderNumber = messageText ? /\b(?=[A-Za-z0-9_-]{6,40}\b)(?=.*[A-Za-z])[A-Za-z0-9_-]{6,40}\b|\b\d{10,15}\b/.test(messageText) : false;
 
       if (config.filters && config.filters[chat.id]) {
         const isInFilters = config.filters[chat.id].some((filter) => messageText?.toLowerCase().includes(filter.toLowerCase()));
