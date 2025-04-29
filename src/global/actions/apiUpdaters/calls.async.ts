@@ -68,7 +68,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           };
           setGlobal(global);
 
-          handleAutoReply(global, message as ApiMessage, targetChat).finally(() => {
+          handleAutoReply(global, message as ApiMessage, targetChat, actions).finally(() => {
             // Handle completion if needed
           });
         }

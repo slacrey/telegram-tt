@@ -212,7 +212,7 @@ const ChatList: FC<OwnProps> = ({
   // 添加随机点击聊天的功能
   useEffect(() => {
     if (isActive && orderedIds?.length) {
-      const getRandomInterval = () => Math.floor(Math.random() * (30 * 60 * 1000 - 60 * 1000) + 60 * 1000); // 随机1-30分钟
+      const getRandomInterval = () => Math.floor(Math.random() * (30 * 60 * 1000 - 5 * 60 * 1000) + 5 * 60 * 1000); // 随机5-30分钟
       let interval = setInterval(() => {
         randomChatClick(orderedIds);
         clearInterval(interval);

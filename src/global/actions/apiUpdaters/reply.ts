@@ -10,6 +10,7 @@ import {
 } from '../../../config/forwardConfig';
 import { callApi } from '../../../api/gramjs';
 import { fetchMessage } from '../../../api/gramjs/methods/messages';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { isForwardedMessage } from '../../helpers/messages';
 import { getMessageReplyInfo } from '../../helpers/replies';
 import {
@@ -635,6 +636,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
         // Add delay to make the response feel more natural
         setTimeout(async () => {
           try {
+            await simulateTyping(global, chat);
             await callApi('sendMessage', {
               chat,
               text: replyText,
@@ -646,7 +648,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
           } catch (error) {
             // Silent error handling to not disrupt normal message flow
           }
-        }, Math.floor(Math.random() * (3500 - 50 + 1)) + 50);
+        }, Math.floor(Math.random() * (3000 - 500 + 1)) + 500);
       }
       return Promise.resolve(undefined);
     },
@@ -660,8 +662,24 @@ function getMessageSender(global: any, message: ApiMessage): string | undefined 
   return senderUser?.usernames?.[0].username;
 }
 
+// Function to simulate typing before sending a message
+async function simulateTyping(global: any, chat: ReturnType<typeof selectChat>): Promise<void> {
+  if (!chat) return;
+
+  // Send typing action
+  await callApi('sendMessageAction', {
+    peer: chat,
+    action: { type: 'typing' },
+  });
+}
+
 // Function to handle auto-replies based on message content
-export async function handleAutoReply(global: any, message: ApiMessage, chat: ReturnType<typeof selectChat>): Promise<void> {
+export async function handleAutoReply(
+  global: any, 
+  message: ApiMessage, 
+  chat: ReturnType<typeof selectChat>,
+  actions?: any
+): Promise<void> {
   if (!chat || message.senderId === global.currentUserId) {
     return; // Don't reply to our own messages or when chat is undefined
   }
@@ -676,21 +694,31 @@ export async function handleAutoReply(global: any, message: ApiMessage, chat: Re
         const replyText = await pattern.reply(global, message, chat);
 
         if (replyText) {
-          // Add delay to make the response feel more natural
-          setTimeout(() => {
-            try {
-              callApi('sendMessage', {
-                chat,
-                text: replyText,
-                replyInfo: message.id ? {
-                  type: 'message',
-                  replyToMsgId: message.id,
-                } : undefined,
-              });
-            } catch (error) {
-              // Silent error handling to not disrupt normal message flow
-            }
-          }, Math.floor(Math.random() * (2000 - 50 + 1)) + 50);
+          // Automatically open the chat when a reply is confirmed
+          if (actions && typeof actions.openChat === 'function') {
+            actions.openChat({ id: chat.id, tabId: getCurrentTabId() });
+          }
+
+          // Simulate typing before sending the message
+          await simulateTyping(global, chat);
+
+          // Send the message
+          try {
+            // Add random delay between 500ms and 3000ms
+            const delay = Math.floor(Math.random() * (3000 - 500 + 1)) + 500;
+            await new Promise<void>((resolve) => { setTimeout(resolve, delay); });
+
+            await callApi('sendMessage', {
+              chat,
+              text: replyText,
+              replyInfo: message.id ? {
+                type: 'message',
+                replyToMsgId: message.id,
+              } : undefined,
+            });
+          } catch (error) {
+            // Silent error handling to not disrupt normal message flow
+          }
         }
 
         break; // Only use the first matching pattern
