@@ -14,3 +14,5 @@ dev/perf/screenshot*
 dist/
 dist-electron/
 .vscode/
+playwright-report/
+test-results/
