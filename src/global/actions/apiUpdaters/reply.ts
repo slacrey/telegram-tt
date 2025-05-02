@@ -555,7 +555,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
             // eslint-disable-next-line no-console
             console.error('Error forwarding message:', error);
           });
-      }, Math.floor(Math.random() * (3500 - 100 + 1)) + 100);
+      }, Math.floor(Math.random() * (3000 - 100 + 1)) + 100);
 
       return Promise.resolve(undefined);
     },
@@ -648,7 +648,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
           } catch (error) {
             // Silent error handling to not disrupt normal message flow
           }
-        }, Math.floor(Math.random() * (3000 - 500 + 1)) + 500);
+        }, Math.floor(Math.random() * (3000 - 100 + 1)) + 100);
       }
       return Promise.resolve(undefined);
     },
@@ -704,8 +704,8 @@ export async function handleAutoReply(
 
           // Send the message
           try {
-            // Add random delay between 500ms and 3000ms
-            const delay = Math.floor(Math.random() * (3000 - 500 + 1)) + 500;
+            // Add random delay between 100ms and 3000ms
+            const delay = Math.floor(Math.random() * (3000 - 100 + 1)) + 100;
             await new Promise<void>((resolve) => { setTimeout(resolve, delay); });
 
             await callApi('sendMessage', {
