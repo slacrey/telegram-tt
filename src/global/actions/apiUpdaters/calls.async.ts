@@ -35,8 +35,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         const targetChat = selectChat(global, chatId);
         if (targetChat) {
           const now = Date.now();
-          // Check if message is from history 1 minute ago
-          if (message.date && message.date < now / 1000 - 5) {
+          // Check if message is from history 2 minute ago
+          if (message.date && message.date < now / 1000 - 120) {
             return;
           }
 
@@ -51,7 +51,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           }
 
           // Check if limit exceeded
-          if (chatLimit.count >= 15) {
+          if (chatLimit.count >= 20) {
             return;
           }
 

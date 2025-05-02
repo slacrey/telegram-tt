@@ -512,7 +512,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       const chatId = message.chatId;
       const isUserInRules = (senderUsername && config.rules[chatId]) ? config.rules[chatId].includes(senderUsername) : false;
       const messageText = extractMessageTextContent(message);
-      const hasOrderNumber = messageText ? /\b(?=[A-Za-z0-9_-]{6,40}\b)(?=.*[A-Za-z])[A-Za-z0-9_-]{6,40}\b|\b\d{10,15}\b/.test(messageText) : false;
+      const hasOrderNumber = messageText ? /(?:查单\s*([A-Za-z0-9_-]{6,40})|订单编号[：:]\s*([A-Za-z0-9_-]{6,40})|系统单号[：:]\s*([A-Za-z0-9_-]{6,40})|单号[：:]\s*([A-Za-z0-9_-]{6,40})|加急查单[：:]\s*([A-Za-z0-9_-]{6,40})|\s*([A-Za-z0-9_-]{6,40})\s*加急查单|\s*([A-Za-z0-9_-]{6,40})\w*|^(?!\d{4}-\d{2}-\d{2})[A-Za-z0-9_-]{6,40}$)/.test(messageText) : false;
 
       if (config.filters && config.filters[chat.id]) {
         const isInFilters = config.filters[chat.id].some((filter) => messageText?.toLowerCase().includes(filter.toLowerCase()));
@@ -675,8 +675,8 @@ async function simulateTyping(global: any, chat: ReturnType<typeof selectChat>):
 
 // Function to handle auto-replies based on message content
 export async function handleAutoReply(
-  global: any, 
-  message: ApiMessage, 
+  global: any,
+  message: ApiMessage,
   chat: ReturnType<typeof selectChat>,
   actions?: any
 ): Promise<void> {
