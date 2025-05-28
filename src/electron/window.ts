@@ -12,9 +12,10 @@ import { processDeeplink } from './deeplink';
 import { captureLocalStorage, restoreLocalStorage } from './localStorage';
 import tray from './tray';
 import {
-  checkIsWebContentsUrlAllowed, forceQuit, getAppTitle, getCurrentWindow, getLastWindow,
-  hasExtraWindows, IS_FIRST_RUN, IS_MAC_OS, IS_PREVIEW, IS_PRODUCTION, IS_WINDOWS,
-  reloadWindows, store, TRAFFIC_LIGHT_POSITION, windows,
+  checkIsWebContentsUrlAllowed, clearRefreshTimer, forceQuit, getAppTitle,
+  getCurrentWindow, getLastWindow, hasExtraWindows, IS_FIRST_RUN, IS_MAC_OS,
+  IS_PREVIEW, IS_PRODUCTION, IS_WINDOWS, reloadWindows, setupRefreshTimer,
+  store, TRAFFIC_LIGHT_POSITION, windows,
 } from './utils';
 import windowStateKeeper from './windowState';
 
@@ -107,10 +108,13 @@ export function createWindow(url?: string) {
       } else if (hasExtraWindows()) {
         windows.delete(window);
         windowState.unmanage();
+        clearRefreshTimer(window);
       } else {
         event.preventDefault();
         window.hide();
       }
+    } else {
+      clearRefreshTimer(window);
     }
   });
 
@@ -138,6 +142,7 @@ export function createWindow(url?: string) {
       reloadWindows();
     }
 
+    setupRefreshTimer(window);
     window.show();
   });
 

@@ -13,6 +13,7 @@ import {
 } from './config';
 import { enableStrict, requestMutation } from './lib/fasterdom/fasterdom';
 import { selectTabState } from './global/selectors';
+import { startAutoRefresh } from './util/autoRefresh';
 import { betterView } from './util/betterView';
 import { establishMultitabRole, subscribeToMasterChange } from './util/establishMultitabRole';
 import { initGlobal } from './util/init';
@@ -41,6 +42,9 @@ async function init() {
   }
 
   if (!(window as any).isCompatTestPassed) return;
+
+  // Start auto refresh
+  startAutoRefresh();
 
   checkAndAssignPermanentWebVersion();
 
