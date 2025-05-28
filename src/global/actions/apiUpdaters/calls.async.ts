@@ -35,38 +35,10 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         const targetChat = selectChat(global, chatId);
         if (targetChat) {
           const now = Date.now();
-          // Check if message is from history 1 minute ago
-          if (message.date && message.date < now / 1000 - 60) {
+          // Check if message is from history 2 minute ago
+          if (message.date && message.date < now / 1000 - 120) {
             return;
           }
-
-          const chatKey = `auto_reply_${chatId}`;
-          const chatLimits = global.autoReplyLimits || {};
-          const chatLimit = chatLimits[chatKey] || { count: 0, timestamp: now };
-
-          // Reset count if more than 1 minute has passed
-          if (now - chatLimit.timestamp > 60000) {
-            chatLimit.count = 0;
-            chatLimit.timestamp = now;
-          }
-
-          // Check if limit exceeded
-          if (chatLimit.count >= 15) {
-            return;
-          }
-
-          // Increment count
-          chatLimit.count++;
-
-          // Update global state with new limits
-          global = {
-            ...global,
-            autoReplyLimits: {
-              ...chatLimits,
-              [chatKey]: chatLimit,
-            },
-          };
-          setGlobal(global);
 
           handleAutoReply(global, message as ApiMessage, targetChat).finally(() => {
             // Handle completion if needed

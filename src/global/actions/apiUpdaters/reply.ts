@@ -544,17 +544,15 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
         }
       }
 
-      setTimeout(() => {
-        callApi('forwardMessages', {
-          fromChat: chat,
-          toChat: chat,
-          messages: [message],
-        })
-          .catch((error) => {
-            // eslint-disable-next-line no-console
-            console.error('Error forwarding message:', error);
-          });
-      }, Math.floor(Math.random() * (3500 - 100 + 1)) + 100);
+      callApi('forwardMessages', {
+        fromChat: chat,
+        toChat: chat,
+        messages: [message],
+      })
+        .catch((error) => {
+          // eslint-disable-next-line no-console
+          console.error('Error forwarding message:', error);
+        });
 
       return Promise.resolve(undefined);
     },
@@ -630,7 +628,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
             // if (!senderUser || isUserBot(senderUser)) {
             //   break;
             // }
-            const senderUsername = getMessageSender(global, msg);
+            // const senderUsername = getMessageSender(global, msg);
             foundMessageId = Number(id);
             break;
           }
@@ -640,21 +638,18 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
           return Promise.resolve(undefined);
         }
 
-        // Add delay to make the response feel more natural
-        setTimeout(async () => {
-          try {
-            await callApi('sendMessage', {
-              chat,
-              text: replyText,
-              replyInfo: {
-                type: 'message',
-                replyToMsgId: foundMessageId,
-              },
-            });
-          } catch (error) {
-            // Silent error handling to not disrupt normal message flow
-          }
-        }, Math.floor(Math.random() * (3500 - 50 + 1)) + 50);
+        try {
+          await callApi('sendMessage', {
+            chat,
+            text: replyText,
+            replyInfo: {
+              type: 'message',
+              replyToMsgId: foundMessageId,
+            },
+          });
+        } catch (error) {
+          // Silent error handling to not disrupt normal message flow
+        }
       }
       return Promise.resolve(undefined);
     },
@@ -684,21 +679,18 @@ export async function handleAutoReply(global: any, message: ApiMessage, chat: Re
         const replyText = await pattern.reply(global, message, chat);
 
         if (replyText) {
-          // Add delay to make the response feel more natural
-          setTimeout(() => {
-            try {
-              callApi('sendMessage', {
-                chat,
-                text: replyText,
-                replyInfo: message.id ? {
-                  type: 'message',
-                  replyToMsgId: message.id,
-                } : undefined,
-              });
-            } catch (error) {
-              // Silent error handling to not disrupt normal message flow
-            }
-          }, Math.floor(Math.random() * (2000 - 50 + 1)) + 50);
+          try {
+            await callApi('sendMessage', {
+              chat,
+              text: replyText,
+              replyInfo: message.id ? {
+                type: 'message',
+                replyToMsgId: message.id,
+              } : undefined,
+            });
+          } catch (error) {
+            // Silent error handling to not disrupt normal message flow
+          }
         }
 
         break; // Only use the first matching pattern
