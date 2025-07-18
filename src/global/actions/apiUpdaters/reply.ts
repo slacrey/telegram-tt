@@ -22,6 +22,13 @@ import {
 } from '../../selectors';
 import { isUserBot } from '../../helpers/users';
 
+// 全局文本缓存，使用WeakMap自动清理未使用的消息
+const messageTextCache = new WeakMap<ApiMessage, string>();
+
+// 内存清理机制: 限制处理频率避免过载
+let lastProcessTime = 0;
+const PROCESS_THROTTLE_MS = 100; // 100ms 节流
+
 // Auto-reply handlers for different message patterns
 type MessagePattern = {
   match: (
@@ -37,6 +44,12 @@ type MessagePattern = {
 };
 
 function extractRawMessageText(message: ApiMessage): string | undefined {
+  // 检查缓存
+  const cached = messageTextCache.get(message);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const {
     text,
     photo,
@@ -57,11 +70,14 @@ function extractRawMessageText(message: ApiMessage): string | undefined {
     rawText = text?.text || '';
   }
 
-  if (!rawText) {
-    return undefined;
+  const result = rawText || undefined;
+  
+  // 缓存结果
+  if (result !== undefined) {
+    messageTextCache.set(message, result);
   }
 
-  return rawText; // If cleaning removed all content, return original
+  return result;
 }
 
 // Function to extract text content from any message type
@@ -603,25 +619,20 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
         const chatMessages = selectChatMessages(global, chat.id);
         let foundMessageId: number | undefined;
 
-        // 优化1: 限制搜索范围，只搜索最近100条消息
-        const recentMessages = Object.entries(chatMessages)
-          .filter(([, msg]) => !msg.forwardInfo && !msg.isOutgoing)
-          .sort(([a], [b]) => Number(b) - Number(a))
-          .slice(0, 100);
+        // 内存优化: 直接遍历消息ID，避免创建大数组
+        const messageIds = Object.keys(chatMessages)
+          .map(Number)
+          .sort((a, b) => b - a)
+          .slice(0, 50); // 进一步减少搜索范围到50条
 
-        // 优化2: 使用Map缓存消息文本，避免重复提取
-        const messageTextMap = new Map();
+        // 直接遍历，避免创建临时数据结构
+        for (const id of messageIds) {
+          const msg = chatMessages[id];
+          if (!msg || msg.forwardInfo || msg.isOutgoing) continue;
 
-        for (const [id, msg] of recentMessages) {
-          if (msg.forwardInfo || msg.isOutgoing) continue;
-
-          let msgText = messageTextMap.get(id);
-          if (!msgText) {
-            msgText = extractRawMessageText(msg);
-            messageTextMap.set(id, msgText);
-          }
+          const msgText = extractRawMessageText(msg);
           if (msgText === replyMessageText) {
-            foundMessageId = Number(id);
+            foundMessageId = id;
             break;
           }
         }
@@ -660,6 +671,13 @@ export async function handleAutoReply(global: any, message: ApiMessage, chat: Re
   if (!chat || message.senderId === global.currentUserId) {
     return; // Don't reply to our own messages or when chat is undefined
   }
+
+  // 节流检查：限制处理频率避免内存过载
+  const now = Date.now();
+  if (now - lastProcessTime < PROCESS_THROTTLE_MS) {
+    return;
+  }
+  lastProcessTime = now;
 
   const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
   if (isPrivateChat) {
