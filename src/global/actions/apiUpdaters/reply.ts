@@ -22,12 +22,30 @@ import {
 } from '../../selectors';
 import { isUserBot } from '../../helpers/users';
 
-// 全局文本缓存，使用WeakMap自动清理未使用的消息
-const messageTextCache = new WeakMap<ApiMessage, string>();
+// 使用Map缓存消息文本，支持手动清理
+const messageTextCache = new Map<number, string>();
+const MAX_CACHE_SIZE = 500; // 限制缓存大小
+let lastCleanupTime = 0;
+const CLEANUP_INTERVAL_MS = 60000; // 1分钟清理一次
 
 // 内存清理机制: 限制处理频率避免过载
 let lastProcessTime = 0;
 const PROCESS_THROTTLE_MS = 100; // 100ms 节流
+
+// 清理缓存函数
+function cleanupCache(): void {
+  const now = Date.now();
+  if (now - lastCleanupTime > CLEANUP_INTERVAL_MS && messageTextCache.size > MAX_CACHE_SIZE) {
+    // 保留最近一半的缓存
+    const entries = Array.from(messageTextCache.entries());
+    const keepCount = Math.floor(MAX_CACHE_SIZE / 2);
+    messageTextCache.clear();
+    entries.slice(-keepCount).forEach(([key, value]) => {
+      messageTextCache.set(key, value);
+    });
+    lastCleanupTime = now;
+  }
+}
 
 // Auto-reply handlers for different message patterns
 type MessagePattern = {
@@ -45,9 +63,12 @@ type MessagePattern = {
 
 function extractRawMessageText(message: ApiMessage): string | undefined {
   // 检查缓存
-  const cached = messageTextCache.get(message);
-  if (cached !== undefined) {
-    return cached;
+  const messageId = message.id;
+  if (messageId) {
+    const cached = messageTextCache.get(messageId);
+    if (cached !== undefined) {
+      return cached;
+    }
   }
 
   const {
@@ -73,8 +94,9 @@ function extractRawMessageText(message: ApiMessage): string | undefined {
   const result = rawText || undefined;
   
   // 缓存结果
-  if (result !== undefined) {
-    messageTextCache.set(message, result);
+  if (result !== undefined && messageId) {
+    messageTextCache.set(messageId, result);
+    cleanupCache(); // 触发清理检查
   }
 
   return result;
@@ -619,20 +641,20 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
         const chatMessages = selectChatMessages(global, chat.id);
         let foundMessageId: number | undefined;
 
-        // 内存优化: 直接遍历消息ID，避免创建大数组
-        const messageIds = Object.keys(chatMessages)
-          .map(Number)
-          .sort((a, b) => b - a)
-          .slice(0, 50); // 进一步减少搜索范围到50条
+        // 内存优化: 使用迭代器避免创建大数组
+        const messageEntries = Object.entries(chatMessages);
+        let searchCount = 0;
+        const MAX_SEARCH_COUNT = 30; // 进一步限制搜索数量
 
-        // 直接遍历，避免创建临时数据结构
-        for (const id of messageIds) {
-          const msg = chatMessages[id];
+        // 倒序搜索最近的消息，避免全量遍历
+        for (let i = messageEntries.length - 1; i >= 0 && searchCount < MAX_SEARCH_COUNT; i--) {
+          const [idStr, msg] = messageEntries[i];
           if (!msg || msg.forwardInfo || msg.isOutgoing) continue;
-
+          
+          searchCount++;
           const msgText = extractRawMessageText(msg);
           if (msgText === replyMessageText) {
-            foundMessageId = id;
+            foundMessageId = Number(idStr);
             break;
           }
         }
@@ -679,31 +701,39 @@ export async function handleAutoReply(global: any, message: ApiMessage, chat: Re
   }
   lastProcessTime = now;
 
+  // 定期清理缓存
+  cleanupCache();
+
   const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
   if (isPrivateChat) {
     // Find the first matching pattern and send its reply
   } else {
     // Find the first matching pattern and send its reply
     for (const pattern of AUTO_REPLY_PATTERNS) {
-      if (await pattern.match(global, message, chat)) {
-        const replyText = await pattern.reply(global, message, chat);
+      try {
+        if (await pattern.match(global, message, chat)) {
+          const replyText = await pattern.reply(global, message, chat);
 
-        if (replyText) {
-          try {
-            await callApi('sendMessage', {
-              chat,
-              text: replyText,
-              replyInfo: message.id ? {
-                type: 'message',
-                replyToMsgId: message.id,
-              } : undefined,
-            });
-          } catch (error) {
-            // Silent error handling to not disrupt normal message flow
+          if (replyText) {
+            try {
+              await callApi('sendMessage', {
+                chat,
+                text: replyText,
+                replyInfo: message.id ? {
+                  type: 'message',
+                  replyToMsgId: message.id,
+                } : undefined,
+              });
+            } catch (error) {
+              // Silent error handling to not disrupt normal message flow
+            }
           }
-        }
 
-        break; // Only use the first matching pattern
+          break; // Only use the first matching pattern
+        }
+      } catch (error) {
+        // 防止单个模式错误影响其他模式
+        continue;
       }
     }
   }
