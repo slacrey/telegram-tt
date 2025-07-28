@@ -22,30 +22,53 @@ import {
 } from '../../selectors';
 import { isUserBot } from '../../helpers/users';
 
-// 使用Map缓存消息文本，支持手动清理
-const messageTextCache = new Map<number, string>();
-const MAX_CACHE_SIZE = 500; // 限制缓存大小
-let lastCleanupTime = 0;
-const CLEANUP_INTERVAL_MS = 60000; // 1分钟清理一次
+// 使用LRU缓存机制，自动管理内存
+class LRUCache<K, V> {
+  private readonly cache = new Map<K, V>();
+  private readonly maxSize: number;
 
-// 内存清理机制: 限制处理频率避免过载
-let lastProcessTime = 0;
-const PROCESS_THROTTLE_MS = 100; // 100ms 节流
+  constructor(maxSize: number) {
+    this.maxSize = maxSize;
+  }
 
-// 清理缓存函数
-function cleanupCache(): void {
-  const now = Date.now();
-  if (now - lastCleanupTime > CLEANUP_INTERVAL_MS && messageTextCache.size > MAX_CACHE_SIZE) {
-    // 保留最近一半的缓存
-    const entries = Array.from(messageTextCache.entries());
-    const keepCount = Math.floor(MAX_CACHE_SIZE / 2);
-    messageTextCache.clear();
-    entries.slice(-keepCount).forEach(([key, value]) => {
-      messageTextCache.set(key, value);
-    });
-    lastCleanupTime = now;
+  get(key: K): V | undefined {
+    const value = this.cache.get(key);
+    if (value !== undefined) {
+      // 重新插入到末尾（LRU逻辑）
+      this.cache.delete(key);
+      this.cache.set(key, value);
+    }
+    return value;
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      // 删除最久未使用的项
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, value);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  size(): number {
+    return this.cache.size;
   }
 }
+
+const messageTextCache = new LRUCache<number, string>(300); // 减少缓存大小
+let lastProcessTime = 0;
+const PROCESS_THROTTLE_MS = 200; // 增加节流时间
+
+// 配置缓存，避免频繁文件读取  
+// 缓存正则表达式
+const orderNumberRegex = /\b(?=[A-Za-z0-9_-]{6,40}\b)(?=.*[A-Za-z])[A-Za-z0-9_-]{6,40}\b|\b\d{10,40}\b/;
+const usernameRegex = /@\s*([^\s@]+)/g;
 
 // Auto-reply handlers for different message patterns
 type MessagePattern = {
@@ -93,10 +116,9 @@ function extractRawMessageText(message: ApiMessage): string | undefined {
 
   const result = rawText || undefined;
   
-  // 缓存结果
+  // 缓存结果 - LRU缓存会自动管理内存
   if (result !== undefined && messageId) {
     messageTextCache.set(messageId, result);
-    cleanupCache(); // 触发清理检查
   }
 
   return result;
@@ -402,8 +424,12 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       if (!messageText) return undefined;
 
       // Extract usernames after @, handling multiple @mentions
-      const usernames = messageText.match(/@\s*([^\s@]+)/g)
-        ?.map((u) => u.replace(/@\s*/, '')) || [];
+      usernameRegex.lastIndex = 0; // 重置正则状态
+      const usernames = [];
+      let match;
+      while ((match = usernameRegex.exec(messageText)) !== null) {
+        usernames.push(match[1]);
+      }
       if (usernames.length === 0) return '请指定要添加的用户名';
 
       // Load existing config
@@ -478,8 +504,12 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       if (!messageText) return undefined;
 
       // Extract usernames after @, handling multiple @mentions
-      const usernames = messageText.match(/@\s*([^\s@]+)/g)
-        ?.map((u) => u.replace(/@\s*/, '')) || [];
+      usernameRegex.lastIndex = 0; // 重置正则状态
+      const usernames = [];
+      let match;
+      while ((match = usernameRegex.exec(messageText)) !== null) {
+        usernames.push(match[1]);
+      }
       if (usernames.length === 0) return '请指定要追加的用户名';
 
       // Load existing config
@@ -549,7 +579,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
       const chatId = message.chatId;
       const isUserInRules = (senderUsername && config.rules[chatId]) ? config.rules[chatId].includes(senderUsername) : false;
       const messageText = extractMessageTextContent(message);
-      const hasOrderNumber = messageText ? /\b(?=[A-Za-z0-9_-]{6,40}\b)(?=.*[A-Za-z])[A-Za-z0-9_-]{6,40}\b|\b\d{10,40}\b/.test(messageText) : false;
+      const hasOrderNumber = messageText ? orderNumberRegex.test(messageText) : false;
 
       if (config.filters && config.filters[chat.id]) {
         const isInFilters = config.filters[chat.id].some((filter) => messageText?.toLowerCase().includes(filter.toLowerCase()));
@@ -641,10 +671,10 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
         const chatMessages = selectChatMessages(global, chat.id);
         let foundMessageId: number | undefined;
 
-        // 内存优化: 使用迭代器避免创建大数组
+        // 内存优化: 使用迭代器避免创建大数组，限制搜索范围
         const messageEntries = Object.entries(chatMessages);
         let searchCount = 0;
-        const MAX_SEARCH_COUNT = 30; // 进一步限制搜索数量
+        const MAX_SEARCH_COUNT = 20; // 进一步减少搜索数量
 
         // 倒序搜索最近的消息，避免全量遍历
         for (let i = messageEntries.length - 1; i >= 0 && searchCount < MAX_SEARCH_COUNT; i--) {
@@ -701,9 +731,6 @@ export async function handleAutoReply(global: any, message: ApiMessage, chat: Re
   }
   lastProcessTime = now;
 
-  // 定期清理缓存
-  cleanupCache();
-
   const isPrivateChat = chat.type === 'chatTypePrivate' || chat.type === 'chatTypeSecret';
   if (isPrivateChat) {
     // Find the first matching pattern and send its reply
@@ -733,7 +760,6 @@ export async function handleAutoReply(global: any, message: ApiMessage, chat: Re
         }
       } catch (error) {
         // 防止单个模式错误影响其他模式
-        continue;
       }
     }
   }
