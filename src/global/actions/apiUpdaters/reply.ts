@@ -65,10 +65,19 @@ const messageTextCache = new LRUCache<number, string>(300); // 减少缓存大�
 let lastProcessTime = 0;
 const PROCESS_THROTTLE_MS = 200; // 增加节流时间
 
-// 配置缓存，避免频繁文件读取  
+// 配置缓存，避免频繁文件读取
 // 缓存正则表达式
 const orderNumberRegex = /\b(?=[A-Za-z0-9_-]{6,40}\b)(?=.*[A-Za-z])[A-Za-z0-9_-]{6,40}\b|\b\d{10,40}\b/;
 const usernameRegex = /@\s*([^\s@]+)/g;
+
+// 全局过滤配置 - 静态过滤字符串数组
+const GLOBAL_FILTERS: string[] = [
+  '广告',
+  '推广',
+  '刷单',
+  '兼职',
+  '地址',
+];
 
 // Auto-reply handlers for different message patterns
 type MessagePattern = {
@@ -115,7 +124,7 @@ function extractRawMessageText(message: ApiMessage): string | undefined {
   }
 
   const result = rawText || undefined;
-  
+
   // 缓存结果 - LRU缓存会自动管理内存
   if (result !== undefined && messageId) {
     messageTextCache.set(messageId, result);
@@ -180,7 +189,11 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
 9. 添加接收包含 - 添加接收包含（回复要包含的消息），添加后必须包含该内容的消息才会被接收处理
 10. 查看转发过滤 - 查看当前群组的所有转发过滤
 11. 查看接收过滤 - 查看当前群组的所有接收过滤
-12. 查看接收包含 - 查看当前群组的所有接收包含`;
+12. 查看接收包含 - 查看当前群组的所有接收包含
+13. 清除转发过滤 - 清除转发过滤，清除所有的转发过滤内容
+14. 清除接收过滤 - 清除转发过滤，清除所有的接收过滤内容
+15. 清除接收包含 - 清除接收包含，清除所有的接收包含内容
+`;
     },
   },
   {
@@ -201,6 +214,25 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
 
       const filters = config.filters[chatId];
       return `当前群组的接收过滤:\n${filters.join('\n')}`;
+    },
+  },
+  {
+    match: (_global, message, chat) => {
+      const isNotPrivateChat = chat.type !== 'chatTypePrivate' && chat.type !== 'chatTypeSecret';
+      const messageText = extractMessageTextContent(message);
+      const hasKeyword = messageText?.includes('清除接收过滤') ?? false;
+
+      return isNotPrivateChat && hasKeyword;
+    },
+    reply: async (_global, message) => {
+      const config = await loadTargetUserConfig();
+      const chatId = message.chatId;
+
+      if (!config.filters || !config.filters[chatId] || config.filters[chatId].length === 0) {
+        return '当前群组没有设置接收过滤';
+      }
+      config.filters[chatId] = [];
+      return `当前群组的接收过滤内容已经全部清除`;
     },
   },
   {
@@ -241,6 +273,46 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
 
       const includes = config.includes[chatId];
       return `当前群组的接收包含:\n${includes.join('\n')}`;
+    },
+  },
+  {
+    match: (_global, message, chat) => {
+      const isNotPrivateChat = chat.type !== 'chatTypePrivate' && chat.type !== 'chatTypeSecret';
+      const messageText = extractMessageTextContent(message);
+      const hasKeyword = messageText?.includes('清除接收包含') ?? false;
+
+      return isNotPrivateChat && hasKeyword;
+    },
+    reply: async (_global, message) => {
+      const config = await loadTargetUserConfig();
+      const chatId = message.chatId;
+
+      if (!config.includes || !config.includes[chatId] || config.includes[chatId].length === 0) {
+        return '当前群组没有设置接收包含';
+      }
+      config.includes[chatId] = [];
+
+      return `当前群组的接收包含内容已经全部清除`;
+    },
+  },
+  {
+    match: (_global, message, chat) => {
+      const isNotPrivateChat = chat.type !== 'chatTypePrivate' && chat.type !== 'chatTypeSecret';
+      const messageText = extractMessageTextContent(message);
+      const hasKeyword = messageText?.includes('清除转发过滤') ?? false;
+
+      return isNotPrivateChat && hasKeyword;
+    },
+    reply: async (_global, message) => {
+      const config = await loadSourceUserConfig();
+      const chatId = message.chatId;
+
+      if (!config.filters || !config.filters[chatId] || config.filters[chatId].length === 0) {
+        return '当前群组没有设置转发过滤';
+      }
+
+      config.filters[chatId] = [];
+      return `当前群组的转发过滤内容已经全部清除`;
     },
   },
   {
@@ -588,6 +660,15 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
         }
       }
 
+      // 全局过滤检查
+      if (messageText) {
+        const isInGlobalFilters = GLOBAL_FILTERS.some((filter) => messageText.toLowerCase().includes(filter.toLowerCase()));
+        if (isInGlobalFilters) {
+          return false;
+        }
+      }
+
+
       return isNotPrivateChat && isUserInRules && hasOrderNumber;
     },
     reply: async (_global, message, chat) => {
@@ -680,7 +761,7 @@ const AUTO_REPLY_PATTERNS: MessagePattern[] = [
         for (let i = messageEntries.length - 1; i >= 0 && searchCount < MAX_SEARCH_COUNT; i--) {
           const [idStr, msg] = messageEntries[i];
           if (!msg || msg.forwardInfo || msg.isOutgoing) continue;
-          
+
           searchCount++;
           const msgText = extractRawMessageText(msg);
           if (msgText === replyMessageText) {
